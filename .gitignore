@@ -1,0 +1,33 @@
+# ===== Aku Malas AI — .gitignore =====
+
+# Editor / tooling (preview & local config, jangan di-upload)
+.claude/
+.vscode/
+.idea/
+
+# OS junk
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+$RECYCLE.BIN/
+
+# Logs & temp
+*.log
+*.tmp
+tmp/
+scratchpad/
+
+# Node (jika nanti pakai tooling)
+node_modules/
+npm-debug.log*
+
+# Berkas rahasia — JANGAN pernah commit kunci API!
+# Kunci API disimpan di chrome.storage.local saat runtime, bukan di kode.
+# File di bawah ini hanya jaga-jaga kalau kamu membuat catatan lokal.
+secrets.*
+*.key
+.env
+.env.*
+keys.json
+config.local.*

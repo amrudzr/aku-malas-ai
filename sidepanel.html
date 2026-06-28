@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aku Malas AI</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- ============ HEADER ============ -->
+      <header class="header">
+        <div class="brand">
+          <span class="logo">✦</span>
+          <span class="brand-name">Aku Malas AI</span>
+        </div>
+
+        <div class="header-actions">
+          <select id="modelSelect" class="model-select" title="Choose AI model">
+            <!-- Filled dynamically from api.js MODELS -->
+          </select>
+          <button id="settingsBtn" class="icon-btn" title="Settings" aria-label="Settings">
+            <!-- gear icon -->
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- ============ CHAT AREA ============ -->
+      <main id="chatArea" class="chat-area">
+        <div id="welcome" class="welcome">
+          <div class="welcome-orb">✦</div>
+          <h2>How can I help?</h2>
+          <p>Tanya apa saja, atau tangkap halaman dan biarkan AI membacanya untukmu.</p>
+
+          <div class="suggestions">
+            <button class="suggestion" data-prompt="Summarize this page in 5 bullet points.">
+              <span class="suggestion-icon">📄</span>
+              <span class="suggestion-text">Summarize this page</span>
+            </button>
+            <button class="suggestion" data-prompt="Explain this code and suggest improvements:">
+              <span class="suggestion-icon">💡</span>
+              <span class="suggestion-text">Explain some code</span>
+            </button>
+            <button class="suggestion" data-prompt="Translate the following text to English:">
+              <span class="suggestion-icon">🌐</span>
+              <span class="suggestion-text">Translate text</span>
+            </button>
+            <button class="suggestion" data-prompt="Draft a professional reply to this message:">
+              <span class="suggestion-icon">✍️</span>
+              <span class="suggestion-text">Draft a reply</span>
+            </button>
+          </div>
+        </div>
+      </main>
+
+      <!-- ============ INPUT AREA ============ -->
+      <footer class="input-area">
+        <!-- Attached image preview -->
+        <div id="previewWrap" class="preview-wrap hidden">
+          <img id="previewImg" class="preview-img" alt="attachment preview" />
+          <button id="removePreview" class="preview-remove" title="Remove">✕</button>
+        </div>
+
+        <div class="input-box">
+          <textarea
+            id="promptInput"
+            class="prompt-input"
+            rows="1"
+            placeholder="Tanya apa saja…  (Enter untuk kirim, Shift+Enter baris baru)"
+          ></textarea>
+
+          <div class="input-toolbar">
+            <div class="tool-left">
+              <button id="screenshotBtn" class="tool-btn" title="Capture visible screen">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                <span>Screenshot</span>
+              </button>
+
+              <button id="fullPageBtn" class="tool-btn" title="Capture full page & send automatically">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="M14 10l7-7"/><path d="M3 21l7-7"/></svg>
+                <span>Full Page → AI</span>
+              </button>
+            </div>
+
+            <button id="sendBtn" class="send-btn" title="Send">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+        </div>
+      </footer>
+
+      <!-- ============ SETTINGS MODAL ============ -->
+      <div id="settingsOverlay" class="overlay hidden">
+        <div class="modal">
+          <div class="modal-head">
+            <h3>Settings</h3>
+            <button id="closeSettings" class="icon-btn" title="Close">✕</button>
+          </div>
+
+          <div class="modal-body">
+            <section class="field-group">
+              <label class="field-label">Gemini API Key</label>
+              <input id="geminiKey" type="password" class="text-input" placeholder="AIza…" autocomplete="off" />
+            </section>
+
+            <section class="field-group">
+              <label class="field-label">Claude (Anthropic) API Key</label>
+              <input id="claudeKey" type="password" class="text-input" placeholder="sk-ant-…" autocomplete="off" />
+            </section>
+
+            <section class="field-group">
+              <label class="field-label">OpenAI API Key</label>
+              <input id="openaiKey" type="password" class="text-input" placeholder="sk-…" autocomplete="off" />
+            </section>
+
+            <section class="field-group">
+              <label class="field-label">System Prompt</label>
+              <textarea id="systemPrompt" class="text-input area" rows="4" placeholder="You are a helpful web assistant…"></textarea>
+            </section>
+
+            <div class="modal-actions">
+              <button id="clearHistoryBtn" class="btn ghost">Clear Chat History</button>
+              <button id="saveSettings" class="btn primary">Save</button>
+            </div>
+            <p id="settingsStatus" class="settings-status"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Local libs first (CSP-safe), then app modules -->
+    <script src="lib/markdown.js"></script>
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>
