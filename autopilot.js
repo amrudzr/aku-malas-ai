@@ -139,8 +139,12 @@ export async function start(opts) {
               if (v && typeof v === "string") cleaned[k] = v;
             }
             if (Object.keys(cleaned).length > 0) {
-              await saveProfile(hostname, cleaned);
-              profile = cleaned; // Use newly discovered profile
+              profile = {
+                hostname: new URL(activeTab.url).hostname,
+                ...cleaned,
+              };
+              console.log("[Auto-Pilot] AI Discovered Profile:", profile);
+              await saveProfile(profile.hostname, profile);
             }
           }
         } catch (e) {

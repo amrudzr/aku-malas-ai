@@ -5,7 +5,7 @@
  * modal, screenshot buttons, chat history persistence, and the API calls.
  */
 
-import { MODELS, PROVIDER_KEY_FIELD, sendToAI, sendToAIForAutopilot, estimateTokens } from "./api.js";
+import { MODELS, PROVIDER_KEY_FIELD, sendToAI, sendToAIForAutopilot, estimateTokens, sendToAIForProfiler } from "./api.js";
 import { getProfile, saveProfile, deleteProfile } from "./site-profiles.js";
 import { start, stop, executeNow, skipCurrent, on, getState } from "./autopilot.js";
 
@@ -54,6 +54,7 @@ const profileOptions = $("profileOptions");
 const profileSubmit = $("profileSubmit");
 const profileNext = $("profileNext");
 const loadProfileBtn = $("loadProfileBtn");
+const autoDiscoverBtn = $("autoDiscoverBtn");
 const saveProfileBtn = $("saveProfileBtn");
 const deleteProfileBtn = $("deleteProfileBtn");
 const profileStatus = $("profileStatus");
@@ -221,6 +222,7 @@ function bindEvents() {
 
   // Site Profiles
   loadProfileBtn.addEventListener("click", handleLoadProfile);
+  autoDiscoverBtn.addEventListener("click", handleAutoDiscover);
   saveProfileBtn.addEventListener("click", handleSaveProfile);
   deleteProfileBtn.addEventListener("click", handleDeleteProfile);
 
@@ -802,6 +804,53 @@ async function handleDeleteProfile() {
   profileSubmit.value = "";
   profileNext.value = "";
   showProfileStatus("Profile deleted");
+}
+
+async function handleAutoDiscover() {
+  const hostname = profileHostname.value.trim();
+  if (!hostname) {
+    showProfileStatus("Buka web yang ingin dianalisis terlebih dahulu");
+    return;
+  }
+  
+  const apiKey = getApiKeyForProvider(MODELS[settings.model].provider);
+  if (!apiKey) {
+    showProfileStatus("API Key belum diset!");
+    return;
+  }
+
+  showProfileStatus("Memindai struktur halaman (mohon tunggu)...");
+  autoDiscoverBtn.disabled = true;
+
+  try {
+    const compressRes = await chrome.runtime.sendMessage({ type: "COMPRESS_DOM" });
+    if (!compressRes?.ok || !compressRes.domString) {
+      throw new Error("Gagal kompresi DOM: " + (compressRes?.error || "Unknown"));
+    }
+
+    const aiSelectors = await sendToAIForProfiler({
+      modelId: settings.model,
+      apiKey,
+      domString: compressRes.domString
+    });
+
+    if (aiSelectors) {
+      if (aiSelectors.content) profileContent.value = aiSelectors.content;
+      if (aiSelectors.question) profileQuestion.value = aiSelectors.question;
+      if (aiSelectors.options) profileOptions.value = aiSelectors.options;
+      if (aiSelectors.submit) profileSubmit.value = aiSelectors.submit;
+      if (aiSelectors.next) profileNext.value = aiSelectors.next;
+      
+      showProfileStatus("Berhasil menemukan selector!");
+      // Optionally save automatically? The user can just click Save.
+    } else {
+      showProfileStatus("AI tidak menemukan selector yang valid.");
+    }
+  } catch (err) {
+    showProfileStatus("Error: " + err.message);
+  } finally {
+    autoDiscoverBtn.disabled = false;
+  }
 }
 
 function showProfileStatus(msg) {
