@@ -192,7 +192,23 @@ function bindEvents() {
   });
 
   // Settings modal
-  settingsBtn.addEventListener("click", () => settingsOverlay.classList.remove("hidden"));
+  settingsBtn.addEventListener("click", async () => {
+    settingsOverlay.classList.remove("hidden");
+    
+    // Auto-fill hostname for Site Profiles
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (tab && tab.url && !tab.url.startsWith("chrome")) {
+        const host = new URL(tab.url).hostname;
+        if (profileHostname.value !== host) {
+          profileHostname.value = host;
+          handleLoadProfile(); // Automatically try to load if it exists
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to auto-fill hostname:", err);
+    }
+  });
   closeSettings.addEventListener("click", () => settingsOverlay.classList.add("hidden"));
   settingsOverlay.addEventListener("click", (e) => {
     if (e.target === settingsOverlay) settingsOverlay.classList.add("hidden");
