@@ -7,14 +7,7 @@
  */
 
 export const DEFAULT_PROFILES = {
-  // Contoh implementasi untuk Oracle Academy (sesuaikan dengan selector aslinya nanti)
-  "academy.oracle.com": {
-    content: ".course-content",
-    question: ".question-text",
-    options: ".answer-option input[type=radio]",
-    submit: ".submit-btn",
-    next: ".next-chapter"
-  },
+  // Biarkan kosong agar AI Selector Auto-Discovery bisa berjalan untuk Oracle Academy
   // Contoh untuk Udemy
   "udemy.com": {
     content: ".curriculum-item-view--content--3ZBlL",
