@@ -152,10 +152,13 @@ Setiap kali kamu mengedit file ekstensi:
 
 Fitur eksperimental untuk mengotomatisasi pengerjaan quiz (contoh: Oracle Academy).
 
-1. **Setup Site Profile**: Buka Settings → isi Hostname (misal: `academy.oracle.com`), lalu masukkan CSS selector untuk `content`, `question`, `options`, `submit`, dan `next`. Simpan.
+1. **Setup Site Profile**: Buka Settings → isi Hostname (misal: `academy.oracle.com`).
+   - Gunakan tombol **"🎯" (Picker)** untuk mengklik elemen di halaman web dan mendapatkan CSS selector secara otomatis.
+   - Atau ketik manual CSS selector untuk `content`, `question`, `options`, `submit`, dan `next`. Simpan.
 2. **Jalankan Auto-Pilot**: Klik tombol `Auto-Pilot` di UI atau gunakan shortcut keyboard `Alt+Shift+A`.
 3. **Dry-Run**: Jika opsi "Dry-Run" aktif, ekstensi akan menampilkan tebakan AI terlebih dahulu. Kamu bisa klik Eksekusi atau Skip.
 4. **Token Budget**: Set batasan token di Settings agar AI berhenti sejenak saat penggunaan token sudah tinggi.
+5. **Context Carry-Over**: Ekstensi akan mengingat ringkasan 10 chapter terakhir untuk membantu menjawab soal yang berkaitan.
 
 ---
 

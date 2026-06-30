@@ -380,10 +380,95 @@ async function callGeminiAutopilot(model, apiKey, userMessage) {
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts
     ?.map((p) => p.text)
-    .filter(Boolean)
+        .filter(Boolean)
     .join("\n");
   if (!text) throw new Error("Gemini returned an empty response.");
   return text;
+}
+// ---------------------------------------------------------------------------
+// Auto-Profiler: analyze DOM to extract CSS selectors
+// ---------------------------------------------------------------------------
+
+const PROFILER_SYSTEM_PROMPT = `Kamu adalah expert Frontend Developer. Kamu menerima versi mini dari struktur DOM sebuah halaman web.
+Tugasmu adalah menganalisis DOM tersebut dan menemukan CSS selector terbaik untuk mengidentifikasi elemen-elemen penting.
+
+Kembalikan HANYA JSON dengan struktur berikut:
+{
+  "content": "CSS selector untuk area materi / artikel utama (jika ada, else null)",
+  "question": "CSS selector untuk teks pertanyaan (jika ada, else null)",
+  "options": "CSS selector untuk opsi jawaban (contoh: 'input[type=radio]', '.answer-choice') (jika ada, else null)",
+  "submit": "CSS selector untuk tombol submit/kirim jawaban (jika ada, else null)",
+  "next": "CSS selector untuk tombol lanjut/next chapter (jika ada, else null)"
+}
+
+Aturan:
+- Selector harus se-spesifik mungkin (gunakan id, class khusus, name, data-* attr).
+- Usahakan selector sependek mungkin tapi akurat.
+- Jika tidak menemukan elemen untuk kategori tertentu, kembalikan null.
+- HANYA kembalikan string format JSON yang valid.`;
+
+/**
+ * Send DOM string to AI to automatically guess CSS selectors for a site profile.
+ */
+export async function sendToAIForProfiler({ modelId, apiKey, domString }) {
+  const model = MODELS[modelId];
+  if (!model) throw new Error(`Unknown model: ${modelId}`);
+  if (!apiKey) throw new Error(`Missing API key for ${model.label}.`);
+
+  if (model.provider === "gemini") {
+    return callGeminiProfiler(model, apiKey, domString);
+  } else {
+    // For Claude / OpenAI
+    let rawText;
+    if (model.provider === "claude") {
+      rawText = await callClaude(model, apiKey, PROFILER_SYSTEM_PROMPT, [{ role: "user", content: domString }]);
+    } else {
+      rawText = await callOpenAI(model, apiKey, PROFILER_SYSTEM_PROMPT, [{ role: "user", content: domString }]);
+    }
+    const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    try {
+      return JSON.parse(cleaned);
+    } catch (e) {
+      throw new Error(`AI returned invalid JSON. Raw response:\n${rawText}`);
+    }
+  }
+}
+
+async function callGeminiProfiler(model, apiKey, domString) {
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta/models/` +
+    `${model.apiName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+  const body = {
+    contents: [
+      { role: "user", parts: [{ text: domString }] },
+    ],
+    systemInstruction: { parts: [{ text: PROFILER_SYSTEM_PROMPT }] },
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 1024,
+      responseMimeType: "application/json",
+    },
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await explainHttpError(res));
+
+  const data = await res.json();
+  const text = data?.candidates?.[0]?.content?.parts
+    ?.map((p) => p.text)
+    .filter(Boolean)
+    .join("\n");
+  if (!text) throw new Error("Gemini returned an empty response.");
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Failed to parse profiler JSON: ${text}`);
+  }
 }
 
 /**

@@ -81,6 +81,7 @@ let settings = {
 let history = []; // conversation memory passed to the API
 let pendingImage = null; // data URL attached to the next message
 let isBusy = false;
+let activePickerTarget = null;
 
 // ---------------------------------------------------------------------------
 // Init
@@ -145,13 +146,22 @@ async function persistHistory() {
 // Event binding
 // ---------------------------------------------------------------------------
 function bindEvents() {
-  // Listen for keyboard shortcut forwarded from background
+  // Listen for messages from background/content scripts
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === "TOGGLE_AUTOPILOT") {
       if (getState() !== "IDLE") {
         stop();
       } else {
         handleAutoPilot();
+      }
+    } else if (message?.type === "PICKER_RESULT") {
+      if (activePickerTarget) {
+        const inputEl = document.getElementById(activePickerTarget);
+        if (inputEl) {
+          inputEl.value = message.selector;
+          showProfileStatus(`Selector diambil untuk ${activePickerTarget.replace('profile', '')}`);
+        }
+        activePickerTarget = null;
       }
     }
   });
@@ -182,7 +192,23 @@ function bindEvents() {
   });
 
   // Settings modal
-  settingsBtn.addEventListener("click", () => settingsOverlay.classList.remove("hidden"));
+  settingsBtn.addEventListener("click", async () => {
+    settingsOverlay.classList.remove("hidden");
+    
+    // Auto-fill hostname for Site Profiles
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (tab && tab.url && !tab.url.startsWith("chrome")) {
+        const host = new URL(tab.url).hostname;
+        if (profileHostname.value !== host) {
+          profileHostname.value = host;
+          handleLoadProfile(); // Automatically try to load if it exists
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to auto-fill hostname:", err);
+    }
+  });
   closeSettings.addEventListener("click", () => settingsOverlay.classList.add("hidden"));
   settingsOverlay.addEventListener("click", (e) => {
     if (e.target === settingsOverlay) settingsOverlay.classList.add("hidden");
@@ -197,6 +223,26 @@ function bindEvents() {
   loadProfileBtn.addEventListener("click", handleLoadProfile);
   saveProfileBtn.addEventListener("click", handleSaveProfile);
   deleteProfileBtn.addEventListener("click", handleDeleteProfile);
+
+  // Visual Element Picker
+  document.querySelectorAll(".pick-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      activePickerTarget = btn.dataset.target;
+      try {
+        const res = await chrome.runtime.sendMessage({ type: "INJECT_PICKER" });
+        if (!res?.ok) {
+          showProfileStatus("Gagal inject picker: " + (res?.error || "Unknown error"));
+          activePickerTarget = null;
+        } else {
+          showProfileStatus("Silakan klik elemen di halaman web...");
+        }
+      } catch (err) {
+        showProfileStatus("Error: " + err.message);
+        activePickerTarget = null;
+      }
+    });
+  });
 
   // Empty-state suggestion chips: prefill the input and focus.
   document.querySelectorAll(".suggestion").forEach((chip) => {
@@ -471,6 +517,7 @@ async function handleAutoPilot() {
 on("stateChange", (state) => {
   apStatusLabel.textContent = state;
   switch (state) {
+    case "PROFILING": apProgressFill.style.width = "10%"; break;
     case "EXTRACTING": apProgressFill.style.width = "20%"; break;
     case "DECIDING": apProgressFill.style.width = "50%"; break;
     case "PREVIEWING": apProgressFill.style.width = "70%"; break;
