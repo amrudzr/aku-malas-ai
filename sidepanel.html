@@ -29,6 +29,23 @@
         </div>
       </header>
 
+      <!-- ============ AUTO-PILOT STATUS ============ -->
+      <div id="autopilotStatus" class="autopilot-status hidden">
+        <div class="ap-progress-bar">
+          <div id="apProgressFill" class="ap-progress-fill" style="width: 0%"></div>
+        </div>
+        <div class="ap-status-text">
+          <span id="apStatusLabel">Idle</span>
+          <span id="apTokenUsage" class="ap-token-usage"></span>
+        </div>
+        <div class="ap-counters">
+          <span class="ap-counter correct">✅ <span id="apCorrect">0</span></span>
+          <span class="ap-counter warning">⚠️ <span id="apWarning">0</span></span>
+          <span class="ap-counter error">❌ <span id="apFailed">0</span></span>
+        </div>
+        <button id="apStopBtn" class="ap-stop-btn" title="Stop Auto-Pilot">⏹ Stop</button>
+      </div>
+
       <!-- ============ CHAT AREA ============ -->
       <main id="chatArea" class="chat-area">
         <div id="welcome" class="welcome">
@@ -84,6 +101,18 @@
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="M14 10l7-7"/><path d="M3 21l7-7"/></svg>
                 <span>Full Page → AI</span>
               </button>
+
+              <div class="tool-divider"></div>
+
+              <button id="autoPilotBtn" class="tool-btn autopilot-btn" title="Extract text & let AI decide">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                <span>Auto-Pilot</span>
+              </button>
+
+              <label class="dry-run-toggle" title="Preview AI decision without executing">
+                <input type="checkbox" id="dryRunToggle" checked />
+                <span class="dry-run-label">Dry-Run</span>
+              </label>
             </div>
 
             <button id="sendBtn" class="send-btn" title="Send">
@@ -120,6 +149,52 @@
             <section class="field-group">
               <label class="field-label">System Prompt</label>
               <textarea id="systemPrompt" class="text-input area" rows="4" placeholder="You are a helpful web assistant…"></textarea>
+            </section>
+
+            <section class="field-group">
+              <label class="field-label">Token Budget (Auto-Pilot)</label>
+              <p class="field-hint">Estimasi batas token per sesi. Notifikasi muncul saat mendekati batas. Kosongkan = tanpa batas.</p>
+              <input id="tokenBudget" type="number" class="text-input" placeholder="50000" min="1000" step="1000" />
+            </section>
+
+            <hr class="modal-divider" />
+
+            <section class="field-group site-profile-section">
+              <label class="field-label">Site Profiles (Auto-Pilot)</label>
+              <p class="field-hint">Simpan CSS selector per situs agar ekstraksi lebih akurat.</p>
+
+              <div class="profile-row">
+                <label class="field-label-sm">Hostname</label>
+                <div class="profile-host-row">
+                  <input id="profileHostname" class="text-input" placeholder="lms.example.com" />
+                  <button id="loadProfileBtn" class="btn ghost small" title="Load">Load</button>
+                </div>
+              </div>
+              <div class="profile-row">
+                <label class="field-label-sm">Content selector</label>
+                <input id="profileContent" class="text-input" placeholder=".materi-content" />
+              </div>
+              <div class="profile-row">
+                <label class="field-label-sm">Question selector</label>
+                <input id="profileQuestion" class="text-input" placeholder=".soal-text" />
+              </div>
+              <div class="profile-row">
+                <label class="field-label-sm">Options selector</label>
+                <input id="profileOptions" class="text-input" placeholder="input[type=radio]" />
+              </div>
+              <div class="profile-row">
+                <label class="field-label-sm">Submit selector</label>
+                <input id="profileSubmit" class="text-input" placeholder="#submitBtn" />
+              </div>
+              <div class="profile-row">
+                <label class="field-label-sm">Next selector</label>
+                <input id="profileNext" class="text-input" placeholder=".btn-next-chapter" />
+              </div>
+              <div class="profile-actions">
+                <button id="saveProfileBtn" class="btn primary small">Save Profile</button>
+                <button id="deleteProfileBtn" class="btn ghost small">Delete</button>
+              </div>
+              <p id="profileStatus" class="settings-status"></p>
             </section>
 
             <div class="modal-actions">

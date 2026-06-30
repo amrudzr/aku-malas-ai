@@ -5,7 +5,9 @@
  * modal, screenshot buttons, chat history persistence, and the API calls.
  */
 
-import { MODELS, PROVIDER_KEY_FIELD, sendToAI } from "./api.js";
+import { MODELS, PROVIDER_KEY_FIELD, sendToAI, sendToAIForAutopilot, estimateTokens } from "./api.js";
+import { getProfile, saveProfile, deleteProfile } from "./site-profiles.js";
+import { start, stop, executeNow, skipCurrent, on, getState } from "./autopilot.js";
 
 // ---------------------------------------------------------------------------
 // Element references
@@ -32,6 +34,30 @@ const clearHistoryBtn = $("clearHistoryBtn");
 const settingsStatus = $("settingsStatus");
 const systemPromptInput = $("systemPrompt");
 
+// Auto-Pilot elements
+const autoPilotBtn = $("autoPilotBtn");
+const dryRunToggle = $("dryRunToggle");
+const autopilotStatus = $("autopilotStatus");
+const apProgressFill = $("apProgressFill");
+const apStatusLabel = $("apStatusLabel");
+const apTokenUsage = $("apTokenUsage");
+const apCorrect = $("apCorrect");
+const apWarning = $("apWarning");
+const apFailed = $("apFailed");
+const apStopBtn = $("apStopBtn");
+
+// Site Profile elements
+const profileHostname = $("profileHostname");
+const profileContent = $("profileContent");
+const profileQuestion = $("profileQuestion");
+const profileOptions = $("profileOptions");
+const profileSubmit = $("profileSubmit");
+const profileNext = $("profileNext");
+const loadProfileBtn = $("loadProfileBtn");
+const saveProfileBtn = $("saveProfileBtn");
+const deleteProfileBtn = $("deleteProfileBtn");
+const profileStatus = $("profileStatus");
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -49,6 +75,7 @@ let settings = {
   openaiKey: "",
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   model: "gemini-3.1-flash",
+  tokenBudget: null,
 };
 
 let history = []; // conversation memory passed to the API
@@ -90,6 +117,7 @@ async function loadSettings() {
   $("claudeKey").value = settings.claudeKey || "";
   $("openaiKey").value = settings.openaiKey || "";
   systemPromptInput.value = settings.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+  if (settings.tokenBudget) $("tokenBudget").value = settings.tokenBudget;
   if (MODELS[settings.model]) modelSelect.value = settings.model;
 }
 
@@ -117,6 +145,17 @@ async function persistHistory() {
 // Event binding
 // ---------------------------------------------------------------------------
 function bindEvents() {
+  // Listen for keyboard shortcut forwarded from background
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "TOGGLE_AUTOPILOT") {
+      if (getState() !== "IDLE") {
+        stop();
+      } else {
+        handleAutoPilot();
+      }
+    }
+  });
+
   // Auto-grow textarea
   promptInput.addEventListener("input", () => {
     promptInput.style.height = "auto";
@@ -151,6 +190,14 @@ function bindEvents() {
   saveSettings.addEventListener("click", handleSaveSettings);
   clearHistoryBtn.addEventListener("click", handleClearHistory);
 
+  // Auto-Pilot
+  autoPilotBtn.addEventListener("click", handleAutoPilot);
+
+  // Site Profiles
+  loadProfileBtn.addEventListener("click", handleLoadProfile);
+  saveProfileBtn.addEventListener("click", handleSaveProfile);
+  deleteProfileBtn.addEventListener("click", handleDeleteProfile);
+
   // Empty-state suggestion chips: prefill the input and focus.
   document.querySelectorAll(".suggestion").forEach((chip) => {
     chip.addEventListener("click", () => {
@@ -183,8 +230,10 @@ async function handleSaveSettings() {
   settings.claudeKey = $("claudeKey").value.trim();
   settings.openaiKey = $("openaiKey").value.trim();
   settings.systemPrompt = systemPromptInput.value.trim() || DEFAULT_SYSTEM_PROMPT;
+  settings.tokenBudget = parseInt($("tokenBudget").value, 10) || null;
   await persistSettings();
-  showSettingsStatus("Settings saved ✓");
+  settingsStatus.textContent = "Tersimpan ✔";
+  settingsStatus.classList.remove("hidden");
 }
 
 function showSettingsStatus(msg) {
@@ -375,4 +424,340 @@ function notifyError(msg) {
   console.error("[Aku Malas AI]", msg);
   // Fall back to alert for hard failures like a missing key.
   // (kept minimal so it doesn't spam during normal use)
+}
+
+// ---------------------------------------------------------------------------
+// Auto-Pilot handlers
+// ---------------------------------------------------------------------------
+
+async function handleAutoPilot() {
+  if (isBusy) return;
+
+  const model = MODELS[settings.model];
+  const keyField = PROVIDER_KEY_FIELD[model.provider];
+  const apiKey = settings[keyField];
+  if (!apiKey) {
+    notifyError(`No API key set for ${model.label}.`);
+    settingsOverlay.classList.remove("hidden");
+    return;
+  }
+
+  welcome.classList.add("hidden");
+  setBusy(true, autoPilotBtn);
+  autopilotStatus.classList.remove("hidden");
+
+  // Reset UI
+  apProgressFill.style.width = "0%";
+  apStatusLabel.textContent = "Starting...";
+  apTokenUsage.textContent = "";
+  apTokenUsage.className = "ap-token-usage";
+  apCorrect.textContent = "0";
+  apWarning.textContent = "0";
+  apFailed.textContent = "0";
+
+  // Start the state machine loop
+  start({
+    modelId: settings.model,
+    apiKey,
+    tokenBudget: settings.tokenBudget,
+    isDryRun: dryRunToggle.checked
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Auto-Pilot Events
+// ---------------------------------------------------------------------------
+
+on("stateChange", (state) => {
+  apStatusLabel.textContent = state;
+  switch (state) {
+    case "EXTRACTING": apProgressFill.style.width = "20%"; break;
+    case "DECIDING": apProgressFill.style.width = "50%"; break;
+    case "PREVIEWING": apProgressFill.style.width = "70%"; break;
+    case "EXECUTING": apProgressFill.style.width = "85%"; break;
+    case "WAITING_PAGE_CHANGE": apProgressFill.style.width = "95%"; break;
+    case "IDLE": 
+      apProgressFill.style.width = "100%"; 
+      setTimeout(() => apProgressFill.style.width = "0%", 1000);
+      setBusy(false, autoPilotBtn);
+      break;
+  }
+});
+
+on("progress", (counters) => {
+  apCorrect.textContent = counters.correct || 0;
+  apWarning.textContent = counters.warning || 0;
+  apFailed.textContent = counters.failed || 0;
+});
+
+on("tokenUpdate", (data) => {
+  apTokenUsage.textContent = `${data.used} tokens`;
+  if (data.percentage > 90) apTokenUsage.className = "ap-token-usage danger";
+  else if (data.percentage > 70) apTokenUsage.className = "ap-token-usage warning";
+  else apTokenUsage.className = "ap-token-usage";
+});
+
+on("tokenWarning", () => {
+  const bubble = document.createElement("div");
+  bubble.className = "token-warning-bubble";
+  bubble.textContent = "⚠️ Token usage is approaching the limit.";
+  chatArea.appendChild(bubble);
+  scrollToBottom();
+});
+
+on("preview", (data) => {
+  // Store summary in history
+  const { decision, context } = data;
+  const summary = decision.summary || "(no summary)";
+  const answer = decision.selectedOption
+    ? `Jawaban: ${decision.selectedOption.label} (${decision.confidence})`
+    : "Tidak ada pertanyaan ditemukan.";
+  
+  history.push({
+    role: "assistant",
+    content: `[Auto-Pilot] ${answer}\n\nRingkasan: ${summary}\n\nAlasan: ${decision.reasoning || "-"}`,
+  });
+  persistHistory();
+
+  renderDryRunBubble(decision, context, data.isDryRun);
+});
+
+on("done", ({ results, totalTokens }) => {
+  const chapterCount = results ? results.length : 0;
+  const answered = results ? results.filter(r => r.answer && r.answer !== "N/A").length : 0;
+  const lowConf = results ? results.filter(r => r.confidence === "low").length : 0;
+  const failed = 0;
+
+  let details = results ? results.map((r, i) => {
+    return `${i + 1}. Ch${r.chapter}: ${r.title} — [${r.answer}] (${r.confidence})`;
+  }).join("\n") : "";
+
+  const summaryMsg = `📊 **Ringkasan Auto-Pilot**
+━━━━━━━━━━━━━━━━━━━━━━
+Chapter diproses : ${chapterCount}
+Jawaban dipilih  : ${answered}
+Confidence rendah: ${lowConf}
+Gagal            : ${failed}
+Token digunakan  : ~${totalTokens || 0}
+
+**Detail:**
+${details}`;
+
+  appendMessage("ai", summaryMsg, null, true);
+  setBusy(false, autoPilotBtn);
+  setTimeout(() => autopilotStatus.classList.add("hidden"), 3000);
+});
+
+on("error", (err) => {
+  appendMessage("ai", `⚠️ **Auto-Pilot Error:** ${err.message}`, null, true);
+  notifyError(err.message);
+  setBusy(false, autoPilotBtn);
+});
+
+apStopBtn.addEventListener("click", () => stop());
+
+/**
+ * Build a formatted prompt string from the extracted context object.
+ */
+function buildPromptFromContext(ctx) {
+  const lines = [];
+  lines.push("=== KONTEKS HALAMAN ===");
+  lines.push(`Judul: ${ctx.title}`);
+  lines.push(`URL: ${ctx.url}`);
+  lines.push("");
+
+  if (ctx.content) {
+    lines.push("=== KONTEN UTAMA ===");
+    lines.push(ctx.content);
+    lines.push("");
+  }
+  if (ctx.question) {
+    lines.push("=== PERTANYAAN ===");
+    lines.push(ctx.question);
+    lines.push("");
+  }
+  if (ctx.options?.length > 0) {
+    lines.push("=== OPSI TERSEDIA ===");
+    const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    ctx.options.forEach((opt, i) => {
+      const letter = labels[i] || String(i + 1);
+      lines.push(`[${letter}] ${opt.label}${opt.value ? ` (value: ${opt.value})` : ""}`);
+    });
+    lines.push("");
+  }
+  if (ctx.actions?.length > 0) {
+    lines.push("=== AKSI TERSEDIA ===");
+    ctx.actions.forEach((act) => {
+      lines.push(`[${act.type.toUpperCase()}] ${act.label} (selector: ${act.selector})`);
+    });
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Render the AI decision as an interactive dry-run bubble in the chat.
+ */
+function renderDryRunBubble(decision, context) {
+  const wrap = document.createElement("div");
+  wrap.className = "msg ai";
+
+  const roleLabel = document.createElement("div");
+  roleLabel.className = "msg-role";
+  roleLabel.textContent = "Auto-Pilot";
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble dry-run-bubble";
+
+  // Header
+  const header = document.createElement("div");
+  header.className = "dr-header";
+  header.textContent = `🔍 Dry-Run — ${context.title}`;
+  bubble.appendChild(header);
+
+  // Question
+  if (context.question) {
+    bubble.appendChild(makeField("Pertanyaan", context.question));
+  }
+
+  // Selected answer
+  if (decision.selectedOption) {
+    bubble.appendChild(makeField("Jawaban AI", decision.selectedOption.label));
+  } else {
+    bubble.appendChild(makeField("Jawaban AI", "Tidak ada pertanyaan/opsi ditemukan"));
+  }
+
+  // Reasoning
+  if (decision.reasoning) {
+    bubble.appendChild(makeField("Alasan", decision.reasoning));
+  }
+
+  // Confidence badge
+  const confRow = document.createElement("div");
+  confRow.className = "dr-field";
+  const confKey = document.createElement("span");
+  confKey.className = "dr-key";
+  confKey.textContent = "Confidence";
+  const confBadge = document.createElement("span");
+  confBadge.className = `dr-confidence ${decision.confidence || "low"}`;
+  confBadge.textContent = decision.confidence || "unknown";
+  confRow.appendChild(confKey);
+  confRow.appendChild(confBadge);
+  bubble.appendChild(confRow);
+
+  // Summary
+  if (decision.summary) {
+    bubble.appendChild(makeField("Ringkasan", decision.summary));
+  }
+
+  // Action buttons (Fase 2)
+  const actionsDiv = document.createElement("div");
+  actionsDiv.className = "dr-actions";
+
+  const execBtn = document.createElement("button");
+  execBtn.className = "dr-action-btn execute";
+  execBtn.textContent = "▶ Eksekusi";
+  execBtn.onclick = () => {
+    execBtn.disabled = true;
+    skipBtn.disabled = true;
+    executeNow();
+  };
+
+  const skipBtn = document.createElement("button");
+  skipBtn.className = "dr-action-btn skip";
+  skipBtn.textContent = "⏭ Skip";
+  skipBtn.onclick = () => {
+    execBtn.disabled = true;
+    skipBtn.disabled = true;
+    skipCurrent();
+  };
+
+  const stopBtn = document.createElement("button");
+  stopBtn.className = "dr-action-btn stop";
+  stopBtn.textContent = "⏹ Stop";
+  stopBtn.onclick = () => {
+    stop();
+  };
+
+  actionsDiv.appendChild(execBtn);
+  actionsDiv.appendChild(skipBtn);
+  actionsDiv.appendChild(stopBtn);
+  bubble.appendChild(actionsDiv);
+
+  wrap.appendChild(roleLabel);
+  wrap.appendChild(bubble);
+  chatArea.appendChild(wrap);
+  scrollToBottom();
+}
+
+function makeField(key, value) {
+  const row = document.createElement("div");
+  row.className = "dr-field";
+  const k = document.createElement("span");
+  k.className = "dr-key";
+  k.textContent = key;
+  const v = document.createElement("span");
+  v.className = "dr-val";
+  v.textContent = value;
+  row.appendChild(k);
+  row.appendChild(v);
+  return row;
+}
+
+// ---------------------------------------------------------------------------
+// Site Profile handlers
+// ---------------------------------------------------------------------------
+
+async function handleLoadProfile() {
+  const hostname = profileHostname.value.trim();
+  if (!hostname) return;
+  const profile = await getProfile(hostname);
+  if (profile) {
+    profileContent.value = profile.content || "";
+    profileQuestion.value = profile.question || "";
+    profileOptions.value = profile.options || "";
+    profileSubmit.value = profile.submit || "";
+    profileNext.value = profile.next || "";
+    showProfileStatus("Profile loaded ✓");
+  } else {
+    profileContent.value = "";
+    profileQuestion.value = "";
+    profileOptions.value = "";
+    profileSubmit.value = "";
+    profileNext.value = "";
+    showProfileStatus("No profile found for this hostname");
+  }
+}
+
+async function handleSaveProfile() {
+  const hostname = profileHostname.value.trim();
+  if (!hostname) {
+    showProfileStatus("Hostname is required");
+    return;
+  }
+  await saveProfile(hostname, {
+    content: profileContent.value,
+    question: profileQuestion.value,
+    options: profileOptions.value,
+    submit: profileSubmit.value,
+    next: profileNext.value,
+  });
+  showProfileStatus("Profile saved ✓");
+}
+
+async function handleDeleteProfile() {
+  const hostname = profileHostname.value.trim();
+  if (!hostname) return;
+  await deleteProfile(hostname);
+  profileContent.value = "";
+  profileQuestion.value = "";
+  profileOptions.value = "";
+  profileSubmit.value = "";
+  profileNext.value = "";
+  showProfileStatus("Profile deleted");
+}
+
+function showProfileStatus(msg) {
+  profileStatus.textContent = msg;
+  setTimeout(() => (profileStatus.textContent = ""), 2000);
 }
