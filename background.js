@@ -68,6 +68,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "INJECT_PICKER") {
+    injectPicker()
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
   return false;
 });
 
@@ -83,6 +90,15 @@ async function getActiveTab() {
     throw new Error("Cannot capture this page (browser internal page).");
   }
   return tab;
+}
+
+/** Inject the picker script into the active tab. */
+async function injectPicker() {
+  const tab = await getActiveTab();
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["picker.js"]
+  });
 }
 
 /** Capture only the visible viewport. Returns a PNG data URL. */

@@ -257,10 +257,17 @@ Berikut lima peningkatan yang memberikan dampak besar dengan usaha implementasi 
 
 ### Enhancement 1 — 🗂️ Site Profile (Preset Selector per Situs)
 
-**Masalah:** Tanpa panduan, AI harus "menebak" struktur DOM setiap kali halaman diekstrak. Ini lambat dan rawan salah target.
+**Masalah:** Tanpa panduan, AI harus "menebak" struktur DOM setiap kali halaman diekstrak. Ini lambat, rawan salah target, dan akan menyulitkan jika user harus menginput manual CSS selector satu per satu.
 
-**Solusi:** Simpan peta CSS selector per domain di `chrome.storage.local`. User cukup setup sekali per situs, lalu semua chapter di situs itu langsung akurat.
+**Solusi & Pendekatan:** 
+Gunakan kombinasi database preset dan alat seleksi visual agar pengguna tetap "malas" dan ekstensi bisa langsung bekerja atau di-setup dengan 1 kali klik:
 
+1. **Pre-defined Database (Database Bawaan):** Ekstensi dikirimkan dengan profil bawaan untuk situs e-learning populer (Oracle Academy, Coursera, Udemy, dll). Ekstensi dapat menarik update list ini dari JSON terpusat (misal via GitHub) secara berkala.
+2. **Visual Element Picker (Point & Click):** Untuk situs baru, user cukup klik "Pilih Area Konten" lalu arahkan mouse ke teks di halaman. Ekstensi akan men-highlight area dan otomatis men-generate CSS selector ketika diklik, lalu menyimpannya. Setup cukup 1 kali per situs.
+3. **Smart Fallback:** Jika tidak ada profil dan picker tidak digunakan, AI menggunakan heuristik DOM generik (mencari tag `<article>`, `<main>`, dll).
+4. **Community Crowdsourcing (Jangka Panjang):** User bisa secara opsional membagikan profil hasil visual picker mereka ke database pusat agar user lain bisa langsung memakainya tanpa konfigurasi.
+
+**Contoh Format Penyimpanan:**
 ```json
 {
   "lms.example.com": {
@@ -273,13 +280,12 @@ Berikut lima peningkatan yang memberikan dampak besar dengan usaha implementasi 
 }
 ```
 
-**Cara kerja:**
-1. Saat Auto-Pilot dimulai, `extractor.js` cek apakah ada profile untuk `location.hostname` saat ini.
+**Cara kerja operasional:**
+1. Saat Auto-Pilot dimulai, `extractor.js` cek apakah ada profile untuk `location.hostname` saat ini, baik di database bawaan maupun buatan user (`chrome.storage.local`).
 2. Jika ada → gunakan selector langsung (deterministik, instan).
-3. Jika tidak ada → fallback ke ekstraksi generik (heuristik DOM).
-4. User bisa menambah/mengedit profile dari panel Settings.
+3. Jika tidak ada → fallback ke ekstraksi generik atau tampilkan opsi "Pilih Area" (Visual Picker) jika user ingin hasil yang lebih akurat.
 
-**Effort:** ~30 baris kode + 1 section kecil di Settings modal.
+**Effort:** Sedang. Membutuhkan script tambahan untuk UI Visual Picker (overlay/highlighter) dan sinkronisasi JSON.
 
 ---
 

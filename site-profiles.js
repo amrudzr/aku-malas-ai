@@ -19,16 +19,20 @@
  * }
  */
 
+import { DEFAULT_PROFILES } from './default-profiles.js';
+
 const STORAGE_KEY = "sk_site_profiles";
 
 /**
  * Get the profile for a given hostname.
+ * It first checks for user-defined profiles, then falls back to the built-in database.
  * @param {string} hostname  e.g. "lms.example.com"
  * @returns {Promise<Object|null>}  The profile object or null if not found.
  */
 export async function getProfile(hostname) {
   const all = await loadAll();
-  return all[hostname] || null;
+  // Prioritaskan profil buatan user, jika tidak ada gunakan database bawaan
+  return all[hostname] || DEFAULT_PROFILES[hostname] || null;
 }
 
 /**

@@ -81,6 +81,7 @@ let settings = {
 let history = []; // conversation memory passed to the API
 let pendingImage = null; // data URL attached to the next message
 let isBusy = false;
+let activePickerTarget = null;
 
 // ---------------------------------------------------------------------------
 // Init
@@ -145,13 +146,22 @@ async function persistHistory() {
 // Event binding
 // ---------------------------------------------------------------------------
 function bindEvents() {
-  // Listen for keyboard shortcut forwarded from background
+  // Listen for messages from background/content scripts
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === "TOGGLE_AUTOPILOT") {
       if (getState() !== "IDLE") {
         stop();
       } else {
         handleAutoPilot();
+      }
+    } else if (message?.type === "PICKER_RESULT") {
+      if (activePickerTarget) {
+        const inputEl = document.getElementById(activePickerTarget);
+        if (inputEl) {
+          inputEl.value = message.selector;
+          showProfileStatus(`Selector diambil untuk ${activePickerTarget.replace('profile', '')}`);
+        }
+        activePickerTarget = null;
       }
     }
   });
@@ -197,6 +207,26 @@ function bindEvents() {
   loadProfileBtn.addEventListener("click", handleLoadProfile);
   saveProfileBtn.addEventListener("click", handleSaveProfile);
   deleteProfileBtn.addEventListener("click", handleDeleteProfile);
+
+  // Visual Element Picker
+  document.querySelectorAll(".pick-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      activePickerTarget = btn.dataset.target;
+      try {
+        const res = await chrome.runtime.sendMessage({ type: "INJECT_PICKER" });
+        if (!res?.ok) {
+          showProfileStatus("Gagal inject picker: " + (res?.error || "Unknown error"));
+          activePickerTarget = null;
+        } else {
+          showProfileStatus("Silakan klik elemen di halaman web...");
+        }
+      } catch (err) {
+        showProfileStatus("Error: " + err.message);
+        activePickerTarget = null;
+      }
+    });
+  });
 
   // Empty-state suggestion chips: prefill the input and focus.
   document.querySelectorAll(".suggestion").forEach((chip) => {

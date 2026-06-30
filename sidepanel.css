@@ -855,6 +855,19 @@ body {
 .profile-host-row .text-input {
   flex: 1;
 }
+.profile-input-group {
+  display: flex;
+  gap: 8px;
+}
+.profile-input-group .text-input {
+  flex: 1;
+}
+.pick-btn {
+  padding: 0 10px;
+  font-size: 14px;
+  display: grid;
+  place-items: center;
+}
 .profile-actions {
   display: flex;
   gap: 8px;
