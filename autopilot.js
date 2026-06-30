@@ -244,11 +244,10 @@ export async function start(opts) {
         
         setState("WAITING_PAGE_CHANGE");
         // We wait a bit to let navigation happen. If no next action exists, we stop.
-        const hasNext = actionArray.some(a => a.type === "click" && a.selector);
+        const hasNext = actionArray.some(a => ["click", "next", "submit"].includes(a.type) && a.selector);
         if (!hasNext) {
-          // If the AI didn't click anything to navigate, we assume the loop is done.
-          emit("error", new Error("No navigation action found by AI. Stopping."));
-          break;
+          console.log("[Auto-Pilot] Soal sudah habis atau tidak ada aksi navigasi. Menghentikan loop.");
+          break; // Berhenti gracefully, emit 'done' akan dipanggil di blok finally
         }
 
         // Wait for page to reload/navigate
