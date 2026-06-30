@@ -264,3 +264,133 @@ async function callOpenAI(model, apiKey, systemPrompt, messages) {
   if (!text) throw new Error("OpenAI returned an empty response.");
   return text;
 }
+
+// ---------------------------------------------------------------------------
+// Auto-Pilot: structured JSON response for page automation
+// ---------------------------------------------------------------------------
+
+const AUTOPILOT_SYSTEM_PROMPT = `Kamu adalah asisten automasi halaman web. Kamu menerima konteks halaman berupa teks, pertanyaan, dan daftar opsi.
+
+Tugasmu:
+1. Baca dan pahami konten halaman.
+2. Jika ada pertanyaan, tentukan jawaban yang paling tepat berdasarkan konten yang tersedia.
+3. Kembalikan keputusanmu dalam format JSON berikut (HANYA JSON, tanpa teks lain):
+
+{
+  "reasoning": "Penjelasan singkat mengapa memilih jawaban ini",
+  "confidence": "high" | "medium" | "low",
+  "selectedOption": {
+    "index": 0,
+    "label": "Label opsi yang dipilih",
+    "selector": "CSS selector untuk opsi tersebut"
+  },
+  "actions": [
+    { "type": "select", "selector": "CSS selector", "value": "nilai" },
+    { "type": "click", "selector": "CSS selector" }
+  ],
+  "summary": "Ringkasan 1-2 kalimat tentang konten/materi halaman ini"
+}
+
+Aturan:
+- "confidence" harus "high" jika kamu sangat yakin (>80%), "medium" jika cukup yakin, "low" jika tidak yakin.
+- Jika tidak ada pertanyaan/opsi, set "selectedOption" ke null dan "actions" ke array kosong.
+- Selalu isi "summary" dengan ringkasan konten halaman.
+- JANGAN menambahkan teks di luar JSON.`;
+
+/**
+ * Send page context to AI and receive structured JSON instructions.
+ * Used by the Auto-Pilot system instead of the normal chat flow.
+ *
+ * @param {Object} params
+ * @param {string} params.modelId
+ * @param {string} params.apiKey
+ * @param {string} params.pageContext  Formatted prompt text from extractor.
+ * @param {string[]} [params.chapterSummaries]  Prior chapter summaries for context carry-over.
+ * @returns {Promise<Object>}  Parsed JSON decision from the AI.
+ */
+export async function sendToAIForAutopilot({ modelId, apiKey, pageContext, chapterSummaries }) {
+  const model = MODELS[modelId];
+  if (!model) throw new Error(`Unknown model: ${modelId}`);
+  if (!apiKey) throw new Error(`Missing API key for ${model.label}.`);
+
+  // Build the user message with optional chapter memory.
+  let userMessage = pageContext;
+  if (chapterSummaries && chapterSummaries.length > 0) {
+    const memory = chapterSummaries
+      .map((s, i) => `Ch${i + 1}: ${s}`)
+      .join("\n");
+    userMessage = `=== RINGKASAN CHAPTER SEBELUMNYA ===\n${memory}\n\n${pageContext}`;
+  }
+
+  let rawText;
+  switch (model.provider) {
+    case "gemini":
+      rawText = await callGeminiAutopilot(model, apiKey, userMessage);
+      break;
+    case "claude":
+      rawText = await callClaude(model, apiKey, AUTOPILOT_SYSTEM_PROMPT, [
+        { role: "user", content: userMessage },
+      ]);
+      break;
+    case "openai":
+      rawText = await callOpenAI(model, apiKey, AUTOPILOT_SYSTEM_PROMPT, [
+        { role: "user", content: userMessage },
+      ]);
+      break;
+    default:
+      throw new Error(`Unsupported provider: ${model.provider}`);
+  }
+
+  // Parse JSON from the AI response (strip markdown fences if present).
+  const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    throw new Error(`AI returned invalid JSON. Raw response:\n${rawText}`);
+  }
+}
+
+/**
+ * Gemini-specific autopilot call that uses response_mime_type for reliable JSON.
+ */
+async function callGeminiAutopilot(model, apiKey, userMessage) {
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta/models/` +
+    `${model.apiName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+  const body = {
+    contents: [
+      { role: "user", parts: [{ text: userMessage }] },
+    ],
+    systemInstruction: { parts: [{ text: AUTOPILOT_SYSTEM_PROMPT }] },
+    generationConfig: {
+      temperature: 0.3,         // lower temp for more deterministic answers
+      maxOutputTokens: 2048,
+      responseMimeType: "application/json",
+    },
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await explainHttpError(res));
+
+  const data = await res.json();
+  const text = data?.candidates?.[0]?.content?.parts
+    ?.map((p) => p.text)
+    .filter(Boolean)
+    .join("\n");
+  if (!text) throw new Error("Gemini returned an empty response.");
+  return text;
+}
+
+/**
+ * Estimasi kasar jumlah token dari sebuah string.
+ * Menggunakan aturan ~4 karakter = 1 token (rough average untuk bahasa campuran).
+ */
+export function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}

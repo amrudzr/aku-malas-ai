@@ -148,6 +148,15 @@ Setiap kali kamu mengedit file ekstensi:
 | **Sudah edit kode tapi tidak berubah** | Belum di-reload. Klik ikon ↻ di `chrome://extensions`. |
 | **Dropdown masih model lama** | Pilihan tersimpan di storage. Pilih ulang model dari dropdown secara manual. |
 
+## 🤖 Bagian 11 — Auto-Pilot Mode
+
+Fitur eksperimental untuk mengotomatisasi pengerjaan quiz (contoh: Oracle Academy).
+
+1. **Setup Site Profile**: Buka Settings → isi Hostname (misal: `academy.oracle.com`), lalu masukkan CSS selector untuk `content`, `question`, `options`, `submit`, dan `next`. Simpan.
+2. **Jalankan Auto-Pilot**: Klik tombol `Auto-Pilot` di UI atau gunakan shortcut keyboard `Alt+Shift+A`.
+3. **Dry-Run**: Jika opsi "Dry-Run" aktif, ekstensi akan menampilkan tebakan AI terlebih dahulu. Kamu bisa klik Eksekusi atau Skip.
+4. **Token Budget**: Set batasan token di Settings agar AI berhenti sejenak saat penggunaan token sudah tinggi.
+
 ---
 
 ## ✅ Ringkasan Cepat

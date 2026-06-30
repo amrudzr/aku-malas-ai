@@ -11,6 +11,9 @@ tanpa build tools), jadi ringan dan mudah dimodifikasi.
 ## ✨ Fitur
 
 - 💬 **Chat sidebar** dengan render **Markdown** + **syntax highlighting** untuk blok kode.
+- ⚡ **Auto-Pilot Mode** — ekstrak teks, AI jawab quiz, otomatis submit & navigasi.
+- 🗂️ **Site Profile** — preset CSS selector per situs.
+- ⌨️ **Keyboard Shortcut** — `Alt+Shift+A` untuk start/stop Auto-Pilot.
 - 🧠 **Banyak model AI** — Gemini 3.1 (Flash / Flash Lite / Pro), Gemini 1.5, Claude 3.5, GPT-4o.
 - 📸 **Screenshot manual** — tangkap layar yang terlihat lalu kirim ke AI.
 - 🖼️ **Screenshot seluruh halaman** — scroll otomatis, gabung jadi satu gambar, langsung dikirim.
