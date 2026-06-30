@@ -517,6 +517,7 @@ async function handleAutoPilot() {
 on("stateChange", (state) => {
   apStatusLabel.textContent = state;
   switch (state) {
+    case "PROFILING": apProgressFill.style.width = "10%"; break;
     case "EXTRACTING": apProgressFill.style.width = "20%"; break;
     case "DECIDING": apProgressFill.style.width = "50%"; break;
     case "PREVIEWING": apProgressFill.style.width = "70%"; break;

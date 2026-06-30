@@ -363,3 +363,60 @@ function cleanText(text) {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+// ---------------------------------------------------------------------------
+// Auto-Profiler Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Minify the DOM tree by removing heavy tags, large text nodes, and keeping only structure and useful attributes.
+ * Useful to send to the AI for selector auto-discovery without exceeding token limits.
+ * @param {Element|Document} rootNode - the node to compress, typically document.body
+ * @returns {string} - a minified HTML representation
+ */
+export function compressDOM(node = document.body) {
+  if (!node) return "";
+
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent.trim();
+    if (!text) return "";
+    return text.length > 30 ? text.substring(0, 30) + "..." : text;
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return "";
+  }
+
+  const tag = node.tagName.toLowerCase();
+  
+  // Skip heavy or non-visual elements
+  const skipTags = ['script', 'style', 'svg', 'noscript', 'iframe', 'img', 'video', 'audio', 'canvas', 'meta', 'link'];
+  if (skipTags.includes(tag)) {
+    return "";
+  }
+
+  let attrs = "";
+  const keepAttrs = ['id', 'class', 'name', 'type', 'role', 'data-value', 'aria-label'];
+  for (const attr of node.attributes) {
+    if (keepAttrs.includes(attr.name)) {
+      attrs += ` ${attr.name}="${attr.value}"`;
+    }
+  }
+
+  let childrenHtml = "";
+  for (const child of node.childNodes) {
+    childrenHtml += compressDOM(child);
+  }
+
+  // Optimize: Skip empty structural divs to save tokens
+  if (!childrenHtml && !attrs && (tag === 'div' || tag === 'span')) {
+    return "";
+  }
+
+  // If node has no children but has attributes, represent as self-closing
+  if (!childrenHtml && attrs) {
+    return `<${tag}${attrs}/>`;
+  }
+
+  return `<${tag}${attrs}>${childrenHtml}</${tag}>`;
+}

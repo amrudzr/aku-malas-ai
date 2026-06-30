@@ -62,6 +62,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === "WAIT_FOR_PAGE_CHANGE") {
+
     waitForPageChange(message.tabId, message.originalTitle, message.originalUrl)
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
@@ -71,6 +72,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "INJECT_PICKER") {
     injectPicker()
       .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (message?.type === "COMPRESS_DOM") {
+    compressDOMPage()
+      .then((domString) => sendResponse({ ok: true, domString }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }
@@ -530,4 +538,50 @@ function waitForPageChange(tabId, originalTitle, originalUrl, timeoutMs = 15000)
 
     intervalId = setInterval(check, 500);
   });
+}
+
+/**
+ * Compress the active tab's DOM to a minified string for the auto-profiler.
+ */
+async function compressDOMPage() {
+  const tab = await getActiveTab();
+
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      function compress(node = document.body) {
+        if (!node) return "";
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent.trim();
+          if (!text) return "";
+          return text.length > 30 ? text.substring(0, 30) + "..." : text;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return "";
+
+        const tag = node.tagName.toLowerCase();
+        const skipTags = ['script', 'style', 'svg', 'noscript', 'iframe', 'img', 'video', 'audio', 'canvas', 'meta', 'link'];
+        if (skipTags.includes(tag)) return "";
+
+        let attrs = "";
+        const keepAttrs = ['id', 'class', 'name', 'type', 'role', 'data-value', 'aria-label'];
+        for (const attr of node.attributes) {
+          if (keepAttrs.includes(attr.name)) {
+            attrs += ` ${attr.name}="${attr.value}"`;
+          }
+        }
+
+        let childrenHtml = "";
+        for (const child of node.childNodes) {
+          childrenHtml += compress(child);
+        }
+
+        if (!childrenHtml && !attrs && (tag === 'div' || tag === 'span')) return "";
+        if (!childrenHtml && attrs) return `<${tag}${attrs}/>`;
+        return `<${tag}${attrs}>${childrenHtml}</${tag}>`;
+      }
+      return compress(document.body);
+    }
+  });
+
+  return result;
 }

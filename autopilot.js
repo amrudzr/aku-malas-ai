@@ -2,8 +2,8 @@
  * autopilot.js — State machine and loop controller for Auto-Pilot mode.
  */
 
-import { sendToAIForAutopilot, estimateTokens } from "./api.js";
-import { getProfile } from "./site-profiles.js";
+import { sendToAIForAutopilot, sendToAIForProfiler, estimateTokens } from "./api.js";
+import { getProfile, saveProfile } from "./site-profiles.js";
 
 // Event handling
 const listeners = {};
@@ -120,7 +120,37 @@ export async function start(opts) {
       if (!activeTab) throw new Error("No active tab found.");
       
       const hostname = activeTab.url ? new URL(activeTab.url).hostname : "";
-      const profile = await getProfile(hostname);
+      let profile = await getProfile(hostname);
+      
+      // Auto-Profiler: AI Selector Auto-Discovery
+      if (!profile && hostname && options.apiKey) {
+        setState("PROFILING");
+        try {
+          const compressRes = await chrome.runtime.sendMessage({ type: "COMPRESS_DOM" });
+          if (compressRes?.ok && compressRes.domString) {
+            const aiSelectors = await sendToAIForProfiler({
+              modelId: options.modelId,
+              apiKey: options.apiKey,
+              domString: compressRes.domString
+            });
+            
+            const cleaned = {};
+            for (const [k, v] of Object.entries(aiSelectors)) {
+              if (v && typeof v === "string") cleaned[k] = v;
+            }
+            if (Object.keys(cleaned).length > 0) {
+              await saveProfile(hostname, cleaned);
+              profile = cleaned; // Use newly discovered profile
+            }
+          }
+        } catch (e) {
+          console.warn("[Auto-Profiler] Failed to auto-discover selectors:", e);
+          // Fallback to generic heuristics (profile = null)
+        }
+        if (state === "IDLE") break;
+        
+        setState("EXTRACTING");
+      }
       
       const extractRes = await chrome.runtime.sendMessage({
         type: "EXTRACT_PAGE",
