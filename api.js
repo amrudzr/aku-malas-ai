@@ -42,13 +42,13 @@ export const MODELS = {
   "gemini-1.5-pro": {
     label: "Gemini 1.5 Pro",
     provider: "gemini",
-    apiName: "gemini-1.5-pro",
+    apiName: "gemini-3.1-pro",
     vision: true,
   },
   "gemini-1.5-flash": {
     label: "Gemini 1.5 Flash",
     provider: "gemini",
-    apiName: "gemini-1.5-flash",
+    apiName: "gemini-3.1-flash",
     vision: true,
   },
   "claude-3-5-sonnet": {
@@ -269,33 +269,33 @@ async function callOpenAI(model, apiKey, systemPrompt, messages) {
 // Auto-Pilot: structured JSON response for page automation
 // ---------------------------------------------------------------------------
 
-const AUTOPILOT_SYSTEM_PROMPT = `Kamu adalah asisten automasi halaman web. Kamu menerima konteks halaman berupa teks, pertanyaan, dan daftar opsi.
+const AUTOPILOT_SYSTEM_PROMPT = `Kamu adalah asisten automasi ujian/quiz di halaman web, dan expert dalam bidang IT/Ilmu Komputer (termasuk kursus seperti Oracle Academy). Kamu menerima teks, pertanyaan, opsi jawaban beserta CSS selector, dan aksi navigasi.
 
-Tugasmu:
-1. Baca dan pahami konten halaman.
-2. Jika ada pertanyaan, tentukan jawaban yang paling tepat berdasarkan konten yang tersedia.
-3. Kembalikan keputusanmu dalam format JSON berikut (HANYA JSON, tanpa teks lain):
+TUGAS UTAMA:
+1. Baca pertanyaan dengan sangat teliti. Perhatikan jebakan atau kata kunci. Pastikan jika soal meminta SATU atau LEBIH DARI SATU jawaban.
+2. Evaluasi setiap opsi jawaban secara kritis sebelum mengambil keputusan. Pilih opsi yang 100% akurat.
+3. Kembalikan keputusanmu dalam format JSON.
+
+FORMAT RESPONS (HANYA JSON, tanpa teks lain):
 
 {
-  "reasoning": "Penjelasan singkat mengapa memilih jawaban ini",
-  "confidence": "high" | "medium" | "low",
-  "selectedOption": {
-    "index": 0,
-    "label": "Label opsi yang dipilih",
-    "selector": "CSS selector untuk opsi tersebut"
-  },
-  "actions": [
-    { "type": "select", "selector": "CSS selector", "value": "nilai" },
-    { "type": "click", "selector": "CSS selector" }
+  "reasoning": "Analisis step-by-step singkat mengapa opsi yang dipilih benar dan opsi lain salah",
+  "confidence": "high | medium | low",
+  "selectedOptions": [
+    { "index": 0, "label": "Label opsi A", "selector": "EXACT_SELECTOR_DARI_DAFTAR_OPSI" }
   ],
-  "summary": "Ringkasan 1-2 kalimat tentang konten/materi halaman ini"
+  "actions": [
+    { "type": "select", "selector": "EXACT_SELECTOR_DARI_DAFTAR_OPSI" },
+    { "type": "submit", "selector": "EXACT_SELECTOR_SUBMIT" }
+  ]
 }
 
-Aturan:
-- "confidence" harus "high" jika kamu sangat yakin (>80%), "medium" jika cukup yakin, "low" jika tidak yakin.
-- Jika tidak ada pertanyaan/opsi, set "selectedOption" ke null dan "actions" ke array kosong.
-- Selalu isi "summary" dengan ringkasan konten halaman.
-- JANGAN menambahkan teks di luar JSON.`;
+ATURAN KRITIS:
+1. **SELECTOR**: Gunakan selector PERSIS seperti yang tertulis di bagian "OPSI TERSEDIA" dan "AKSI TERSEDIA".
+2. **MULTI-SELECT**: Jika soal meminta lebih dari satu jawaban, masukkan SEMUA jawaban yang benar ke array "selectedOptions".
+3. **SUBMIT**: SELALU tambahkan aksi submit/next di akhir array "actions".
+4. **TIDAK ADA SOAL**: Jika benar-benar tidak ada opsi jawaban, kembalikan array kosong []. Jika ADA opsi jawaban, kamu WAJIB memilih yang paling masuk akal (meskipun soal terlihat kosong/kurang).
+5. JANGAN menambahkan teks apapun di luar blok JSON.`;
 
 /**
  * Send page context to AI and receive structured JSON instructions.
@@ -306,9 +306,10 @@ Aturan:
  * @param {string} params.apiKey
  * @param {string} params.pageContext  Formatted prompt text from extractor.
  * @param {string[]} [params.chapterSummaries]  Prior chapter summaries for context carry-over.
+ * @param {string} params.imageUrl  Optional base64 image data url of the captured page.
  * @returns {Promise<Object>}  Parsed JSON decision from the AI.
  */
-export async function sendToAIForAutopilot({ modelId, apiKey, pageContext, chapterSummaries }) {
+export async function sendToAIForAutopilot({ modelId, apiKey, pageContext, chapterSummaries, imageUrl }) {
   const model = MODELS[modelId];
   if (!model) throw new Error(`Unknown model: ${modelId}`);
   if (!apiKey) throw new Error(`Missing API key for ${model.label}.`);
@@ -325,16 +326,16 @@ export async function sendToAIForAutopilot({ modelId, apiKey, pageContext, chapt
   let rawText;
   switch (model.provider) {
     case "gemini":
-      rawText = await callGeminiAutopilot(model, apiKey, userMessage);
+      rawText = await callGeminiAutopilot(model, apiKey, userMessage, imageUrl);
       break;
     case "claude":
       rawText = await callClaude(model, apiKey, AUTOPILOT_SYSTEM_PROMPT, [
-        { role: "user", content: userMessage },
+        { role: "user", content: userMessage, image: imageUrl },
       ]);
       break;
     case "openai":
       rawText = await callOpenAI(model, apiKey, AUTOPILOT_SYSTEM_PROMPT, [
-        { role: "user", content: userMessage },
+        { role: "user", content: userMessage, image: imageUrl },
       ]);
       break;
     default:
@@ -353,14 +354,20 @@ export async function sendToAIForAutopilot({ modelId, apiKey, pageContext, chapt
 /**
  * Gemini-specific autopilot call that uses response_mime_type for reliable JSON.
  */
-async function callGeminiAutopilot(model, apiKey, userMessage) {
+async function callGeminiAutopilot(model, apiKey, userMessage, imageUrl) {
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/` +
     `${model.apiName}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
+  const parts = [{ text: userMessage }];
+  if (imageUrl && model.vision) {
+    const { mimeType, base64 } = splitDataUrl(imageUrl);
+    parts.push({ inlineData: { mimeType, data: base64 } });
+  }
+
   const body = {
     contents: [
-      { role: "user", parts: [{ text: userMessage }] },
+      { role: "user", parts },
     ],
     systemInstruction: { parts: [{ text: AUTOPILOT_SYSTEM_PROMPT }] },
     generationConfig: {

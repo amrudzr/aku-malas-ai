@@ -90,7 +90,7 @@ function buildPromptFromContext(ctx) {
     const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     ctx.options.forEach((opt, i) => {
       const letter = labels[i] || String(i + 1);
-      lines.push(`[${letter}] ${opt.label}${opt.value ? ` (value: ${opt.value})` : ""}`);
+      lines.push(`[${letter}] ${opt.label} (selector: ${opt.selector})`);
     });
     lines.push("");
   }
@@ -111,6 +111,8 @@ export async function start(opts) {
   chapterSummaries = [];
   totalTokens = 0;
   count = 0;
+  
+  setState("STARTING");
   
   try {
     while (state !== "IDLE") {
@@ -171,11 +173,26 @@ export async function start(opts) {
       if (state === "IDLE") break; // Checked if stopped during await
 
       setState("DECIDING");
+      
+      // Capture screenshot to provide visual context
+      let imageDataUrl = null;
+      try {
+        const captureRes = await chrome.runtime.sendMessage({ type: "CAPTURE_VISIBLE" });
+        if (captureRes?.ok && captureRes.dataUrl) {
+          imageDataUrl = captureRes.dataUrl;
+        }
+      } catch (e) {
+        console.warn("[Auto-Pilot] Failed to capture visual context:", e);
+      }
+      
+      if (state === "IDLE") break;
+
       const decision = await sendToAIForAutopilot({
         modelId: options.modelId,
         apiKey: options.apiKey,
         pageContext: promptText,
         chapterSummaries,
+        imageUrl: imageDataUrl
       });
 
       if (decision.summary) {
@@ -194,12 +211,16 @@ export async function start(opts) {
 
       if (state === "IDLE") break;
 
-      // Log result
+      // Log result — support both selectedOption (legacy) and selectedOptions (new)
+      const selectedList = decision.selectedOptions || (decision.selectedOption ? [decision.selectedOption] : []);
+      const answerLabel = selectedList.length > 0
+        ? selectedList.map(o => o.label).join(", ")
+        : "N/A";
       results.push({
         chapter: count + 1,
         title: context.title,
         question: context.question,
-        answer: decision.selectedOption ? decision.selectedOption.label : "N/A",
+        answer: answerLabel,
         confidence: decision.confidence || "low",
       });
 
@@ -221,15 +242,44 @@ export async function start(opts) {
 
       if (!userSkipped) {
         setState("EXECUTING");
-        const actionArray = decision.actions || [];
         
-        // Add the selected option if not already in actions array
-        if (decision.selectedOption?.selector && !actionArray.find(a => a.selector === decision.selectedOption.selector)) {
-          actionArray.unshift({
-            type: "select",
-            selector: decision.selectedOption.selector
-          });
+        // Build a clean action array from AI response + fallbacks
+        let actionArray = [];
+        
+        // Step 1: Add select actions for all chosen options
+        if (selectedList.length > 0) {
+          for (const opt of selectedList) {
+            if (opt.selector && !actionArray.find(a => a.selector === opt.selector)) {
+              actionArray.push({ type: "select", selector: opt.selector });
+            }
+          }
         }
+        
+        // Step 2: Add any additional AI-specified actions (submit/click/next)
+        if (decision.actions && decision.actions.length > 0) {
+          for (const act of decision.actions) {
+            // Skip "select" actions since we already added them from selectedOptions
+            if (act.type === "select") continue;
+            if (act.selector && !actionArray.find(a => a.selector === act.selector)) {
+              actionArray.push(act);
+            }
+          }
+        }
+        
+        // Step 3: Ensure a submit/next action exists (fallback from page context)
+        const hasNavAction = actionArray.some(a => ["click", "next", "submit"].includes(a.type) && a.selector);
+        if (!hasNavAction && context.actions && context.actions.length > 0) {
+          const navAction = context.actions.find(a => a.type === "submit" || a.type === "next");
+          if (navAction) {
+            actionArray.push({
+              type: navAction.type,
+              selector: navAction.selector
+            });
+            console.log("[Auto-Pilot] Auto-appended navigation action:", navAction);
+          }
+        }
+        
+        console.log("[Auto-Pilot] Final action array:", JSON.stringify(actionArray));
         
         if (actionArray.length > 0) {
           const execRes = await chrome.runtime.sendMessage({
@@ -243,14 +293,14 @@ export async function start(opts) {
         }
         
         setState("WAITING_PAGE_CHANGE");
-        // We wait a bit to let navigation happen. If no next action exists, we stop.
+        // Check if we had a submit/next action at all
         const hasNext = actionArray.some(a => ["click", "next", "submit"].includes(a.type) && a.selector);
         if (!hasNext) {
           console.log("[Auto-Pilot] Soal sudah habis atau tidak ada aksi navigasi. Menghentikan loop.");
-          break; // Berhenti gracefully, emit 'done' akan dipanggil di blok finally
+          break;
         }
 
-        // Wait for page to reload/navigate
+        // Wait for content change (SPA-friendly: check DOM content instead of URL)
         try {
           const waitRes = await chrome.runtime.sendMessage({
             type: "WAIT_FOR_PAGE_CHANGE",
@@ -264,8 +314,8 @@ export async function start(opts) {
         } catch (e) {
           console.warn("Failed to wait for page change:", e);
         }
-        // Extra sleep to allow dom rendering
-        await sleep(1500);
+        // Extra sleep to allow dom rendering after SPA navigation
+        await sleep(500);
       }
 
       count++;

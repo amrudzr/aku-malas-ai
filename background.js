@@ -280,16 +280,29 @@ async function extractPage(profile) {
         return (text || "").replace(/\s+/g, " ").trim();
       }
 
+      function cleanBlockText(text) {
+        return (text || "")
+          .replace(/[ \t]+/g, " ")
+          .replace(/\n\s*\n+/g, "\n\n")
+          .trim();
+      }
+
       function buildSelector(el, fallbackBase, index) {
         if (el.id) return `#${el.id}`;
-        if (el.name) return `[name="${el.name}"]`;
-        return `${fallbackBase}:nth-of-type(${index + 1})`;
+        if (el.name && el.value) return `[name="${el.name}"][value="${el.value}"]`;
+        
+        // Very robust fallback: mark the element dynamically if it lacks id or name+value
+        const uniqueId = el.getAttribute("data-am-id") || "am_opt_" + Math.random().toString(36).substr(2, 9);
+        el.setAttribute("data-am-id", uniqueId);
+        return `[data-am-id="${uniqueId}"]`;
       }
 
       function getOptionLabel(el) {
         if (el.id) {
-          const label = document.querySelector(`label[for="${el.id}"]`);
-          if (label) return cleanText(label.textContent);
+          try {
+            const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+            if (label) return cleanText(label.textContent);
+          } catch (e) {}
         }
         const parentLabel = el.closest("label");
         if (parentLabel) return cleanText(parentLabel.textContent);
@@ -297,9 +310,18 @@ async function extractPage(profile) {
         if (next && next.nodeType === Node.TEXT_NODE && next.textContent.trim()) {
           return cleanText(next.textContent);
         }
+        const nextEl = el.nextElementSibling;
+        if (nextEl && nextEl.textContent.trim()) {
+          return cleanText(nextEl.textContent);
+        }
         const parent = el.parentElement;
         if (parent) {
           const text = parent.textContent.replace(el.textContent || "", "").trim();
+          if (text) return cleanText(text);
+        }
+        const container = el.closest("tr, li, .choice, .option, .answer");
+        if (container) {
+          const text = container.textContent.trim();
           if (text) return cleanText(text);
         }
         return el.value || "(no label)";
@@ -309,7 +331,7 @@ async function extractPage(profile) {
       function extractContent() {
         if (profile?.content) {
           const el = document.querySelector(profile.content);
-          return el ? cleanText(el.innerText) : "";
+          if (el) return cleanBlockText(el.innerText);
         }
         const candidates = [
           "article", "main", "[role='main']", ".content", ".materi",
@@ -318,16 +340,16 @@ async function extractPage(profile) {
         ];
         for (const sel of candidates) {
           const el = document.querySelector(sel);
-          if (el && el.innerText.trim().length > 50) return cleanText(el.innerText);
+          if (el && el.innerText.trim().length > 50) return cleanBlockText(el.innerText);
         }
-        return cleanText(document.body?.innerText || "").slice(0, 5000);
+        return cleanBlockText(document.body?.innerText || "").slice(0, 15000);
       }
 
       // --- Question ---
       function extractQuestion() {
         if (profile?.question) {
           const el = document.querySelector(profile.question);
-          return el ? cleanText(el.innerText) : "";
+          if (el) return cleanBlockText(el.innerText);
         }
         const candidates = [
           ".question-text", ".quiz-question", ".soal", ".qtext",
@@ -335,7 +357,7 @@ async function extractPage(profile) {
         ];
         for (const sel of candidates) {
           const el = document.querySelector(sel);
-          if (el && el.innerText.trim().length > 5) return cleanText(el.innerText);
+          if (el && el.innerText.trim().length > 5) return cleanBlockText(el.innerText);
         }
         return "";
       }
@@ -345,16 +367,18 @@ async function extractPage(profile) {
         const options = [];
         if (profile?.options) {
           const els = document.querySelectorAll(profile.options);
-          els.forEach((el, i) => {
-            options.push({
-              selector: buildSelector(el, profile.options, i),
-              label: getOptionLabel(el),
-              value: el.value || el.dataset?.value || "",
-              type: el.type || el.tagName.toLowerCase(),
-              index: i,
+          if (els.length > 0) {
+            els.forEach((el, i) => {
+              options.push({
+                selector: buildSelector(el, profile.options, i),
+                label: getOptionLabel(el),
+                value: el.value || el.dataset?.value || "",
+                type: el.type || el.tagName.toLowerCase(),
+                index: i,
+              });
             });
-          });
-          return options;
+            return options;
+          }
         }
         // Heuristic: radios
         const radios = document.querySelectorAll('input[type="radio"]');
@@ -413,7 +437,7 @@ async function extractPage(profile) {
           const el = document.querySelector(profile.next);
           if (el) actions.push({ selector: profile.next, label: cleanText(el.textContent) || "Next", type: "next" });
         }
-        if (profile?.submit || profile?.next) return actions;
+        if (actions.length > 0) return actions;
 
         // Heuristic: submit
         const submitSels = [
@@ -427,14 +451,23 @@ async function extractPage(profile) {
             break;
           }
         }
-        // Heuristic: next
+        // Heuristic: text-based fallback for submit and next
+        const submitTextPat = /submit|kirim|jawab/i;
         const nextPat = /next|lanjut|berikut|selanjutnya|continue|proceed|→|»|▶/i;
-        const allBtns = document.querySelectorAll("a, button");
+        const allBtns = document.querySelectorAll("a, button, input[type='button']");
+        
         for (const btn of allBtns) {
-          const text = (btn.textContent || btn.title || btn.ariaLabel || "").trim();
-          if (nextPat.test(text) && text.length < 60) {
-            actions.push({ selector: buildSelector(btn, btn.tagName.toLowerCase(), 0), label: cleanText(text) || "Next", type: "next" });
-            break;
+          // Skip disabled buttons
+          if (btn.disabled || btn.classList.contains("disabled")) continue;
+          
+          const text = (btn.textContent || btn.title || btn.value || btn.ariaLabel || "").trim();
+          
+          if (text.length > 0 && text.length < 60) {
+            if (!actions.some(a => a.type === "submit") && submitTextPat.test(text)) {
+              actions.push({ selector: buildSelector(btn, btn.tagName.toLowerCase(), 0), label: cleanText(text) || "Submit", type: "submit" });
+            } else if (!actions.some(a => a.type === "next") && nextPat.test(text)) {
+              actions.push({ selector: buildSelector(btn, btn.tagName.toLowerCase(), 0), label: cleanText(text) || "Next", type: "next" });
+            }
           }
         }
         return actions;
@@ -497,16 +530,40 @@ async function executeAction(tabId, actions) {
         }
 
         if (action.type === "select") {
-          if (el.type === "radio" || el.type === "checkbox") {
-            el.checked = true;
-            el.dispatchEvent(new Event("change", { bubbles: true }));
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-          } else if (el.tagName.toLowerCase() === "select") {
+          if (el.tagName.toLowerCase() === "select") {
             el.value = action.value || el.options[el.selectedIndex]?.value;
             el.dispatchEvent(new Event("change", { bubbles: true }));
           } else {
-            // Click as fallback
-            el.click();
+            // For radio/checkbox, clicking the label is much safer than clicking the hidden input
+            let clickedLabel = false;
+            if ((el.type === "radio" || el.type === "checkbox") && el.id) {
+              try {
+                const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+                if (label) {
+                  label.click();
+                  clickedLabel = true;
+                }
+              } catch (e) {}
+            }
+            
+            if (!clickedLabel) {
+              const parentLabel = el.closest("label");
+              if (parentLabel) {
+                parentLabel.click();
+                clickedLabel = true;
+              }
+            }
+
+            if (!clickedLabel) {
+              el.click();
+            }
+
+            // Fallback for radio/checkbox if click() didn't change the checked state
+            if ((el.type === "radio" || el.type === "checkbox") && !el.checked) {
+              el.checked = true;
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+              el.dispatchEvent(new Event("input", { bubbles: true }));
+            }
           }
         } else if (action.type === "click" || action.type === "submit" || action.type === "next") {
           el.click();
@@ -526,23 +583,47 @@ async function executeAction(tabId, actions) {
 /**
  * Wait for document.title or location.href to change indicating navigation.
  */
-function waitForPageChange(tabId, originalTitle, originalUrl, timeoutMs = 15000) {
+function waitForPageChange(tabId, originalTitle, originalUrl, timeoutMs = 12000) {
   return new Promise((resolve, reject) => {
     const startTime = Date.now();
     let intervalId;
+    let originalContentSnippet = null;
 
     const check = async () => {
       if (Date.now() - startTime > timeoutMs) {
         clearInterval(intervalId);
-        reject(new Error("Timeout waiting for page change"));
+        // Don't reject — just resolve so the loop continues (SPA might have changed content)
+        resolve();
         return;
       }
       try {
         const [{ result }] = await chrome.scripting.executeScript({
           target: { tabId },
-          func: () => ({ title: document.title, url: location.href })
+          func: () => {
+            // Grab a content "fingerprint": question text or first 200 chars of visible body text
+            const qEls = document.querySelectorAll('.question-text, .quiz-question, .qtext, .question, legend, .prompt, [data-question]');
+            let qText = '';
+            for (const el of qEls) {
+              if (el.innerText?.trim()) { qText = el.innerText.trim().slice(0, 200); break; }
+            }
+            // Fallback: grab body text snippet
+            const bodySnippet = document.body?.innerText?.trim().slice(0, 300) || '';
+            return {
+              title: document.title,
+              url: location.href,
+              contentSnippet: qText || bodySnippet
+            };
+          }
         });
-        if (result.title !== originalTitle || result.url !== originalUrl) {
+        
+        // First call — capture the original content
+        if (originalContentSnippet === null) {
+          originalContentSnippet = result.contentSnippet;
+          return; // Wait for next check
+        }
+        
+        // Detect change: URL, title, OR content changed
+        if (result.title !== originalTitle || result.url !== originalUrl || result.contentSnippet !== originalContentSnippet) {
           clearInterval(intervalId);
           resolve();
         }
@@ -553,7 +634,7 @@ function waitForPageChange(tabId, originalTitle, originalUrl, timeoutMs = 15000)
       }
     };
 
-    intervalId = setInterval(check, 500);
+    intervalId = setInterval(check, 400);
   });
 }
 

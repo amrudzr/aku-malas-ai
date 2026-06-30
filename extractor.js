@@ -89,7 +89,7 @@ export function buildPromptText(context) {
 function extractContent(root, profile) {
   if (profile?.content) {
     const el = root.querySelector(profile.content);
-    return el ? cleanText(el.innerText) : "";
+    return el ? cleanBlockText(el.innerText) : "";
   }
   // Heuristic: try common content containers in priority order.
   const candidates = [
@@ -107,12 +107,12 @@ function extractContent(root, profile) {
   for (const sel of candidates) {
     const el = root.querySelector(sel);
     if (el && el.innerText.trim().length > 50) {
-      return cleanText(el.innerText);
+      return cleanBlockText(el.innerText);
     }
   }
-  // Fallback: body text (truncated).
+  // Fallback: body text (truncated). Expand truncation limit because we preserve newlines.
   const body = root.body?.innerText || "";
-  return cleanText(body).slice(0, 5000);
+  return cleanBlockText(body).slice(0, 15000);
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +122,7 @@ function extractContent(root, profile) {
 function extractQuestion(root, profile) {
   if (profile?.question) {
     const el = root.querySelector(profile.question);
-    return el ? cleanText(el.innerText) : "";
+    return el ? cleanBlockText(el.innerText) : "";
   }
   // Heuristic: look for question-like elements.
   const candidates = [
@@ -139,7 +139,7 @@ function extractQuestion(root, profile) {
   for (const sel of candidates) {
     const el = root.querySelector(sel);
     if (el && el.innerText.trim().length > 5) {
-      return cleanText(el.innerText);
+      return cleanBlockText(el.innerText);
     }
   }
   return "";
@@ -337,8 +337,10 @@ function buildSelector(el, fallbackBase, index) {
 function getOptionLabel(el) {
   // 1. Check for an associated <label>
   if (el.id) {
-    const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-    if (label) return cleanText(label.textContent);
+    try {
+      const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (label) return cleanText(label.textContent);
+    } catch (e) {}
   }
   // 2. Check parent <label>
   const parentLabel = el.closest("label");
@@ -348,19 +350,38 @@ function getOptionLabel(el) {
   if (next && next.nodeType === Node.TEXT_NODE && next.textContent.trim()) {
     return cleanText(next.textContent);
   }
+  // 3b. Check next element sibling
+  const nextEl = el.nextElementSibling;
+  if (nextEl && nextEl.textContent.trim()) {
+    return cleanText(nextEl.textContent);
+  }
   // 4. Check parent container text
   const parent = el.parentElement;
   if (parent) {
     const text = parent.textContent.replace(el.textContent || "", "").trim();
     if (text) return cleanText(text);
   }
+  // 5. Extended fallback for table rows, list items, etc.
+  const container = el.closest("tr, li, .choice, .option, .answer");
+  if (container) {
+    const text = container.textContent.trim();
+    if (text) return cleanText(text);
+  }
   return el.value || "(no label)";
 }
 
-/** Clean whitespace from extracted text. */
+/** Clean whitespace from short extracted text (labels, single lines). */
 function cleanText(text) {
   return (text || "")
     .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Clean text but preserve structural newlines (useful for content and questions). */
+function cleanBlockText(text) {
+  return (text || "")
+    .replace(/[ \t]+/g, " ")         // Collapse horizontal whitespace
+    .replace(/\n\s*\n+/g, "\n\n")    // Collapse multiple newlines into max double newlines
     .trim();
 }
 
