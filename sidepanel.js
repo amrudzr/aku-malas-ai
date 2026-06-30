@@ -809,12 +809,14 @@ async function handleDeleteProfile() {
 async function handleAutoDiscover() {
   const hostname = profileHostname.value.trim();
   if (!hostname) {
+    alert("Buka web yang ingin dianalisis terlebih dahulu");
     showProfileStatus("Buka web yang ingin dianalisis terlebih dahulu");
     return;
   }
   
   const apiKey = getApiKeyForProvider(MODELS[settings.model].provider);
   if (!apiKey) {
+    alert("API Key belum diset!");
     showProfileStatus("API Key belum diset!");
     return;
   }
@@ -847,6 +849,7 @@ async function handleAutoDiscover() {
       showProfileStatus("AI tidak menemukan selector yang valid.");
     }
   } catch (err) {
+    alert("Error Auto-Discover: " + err.message);
     showProfileStatus("Error: " + err.message);
   } finally {
     autoDiscoverBtn.disabled = false;
