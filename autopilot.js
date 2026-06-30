@@ -272,7 +272,8 @@ export async function start(opts) {
       emit("progress", { completed: count, correct, warning, failed });
     }
   } catch (err) {
-    emit("error", err);
+    const errorMsg = err?.message || (typeof err === "string" ? err : JSON.stringify(err));
+    emit("error", new Error(errorMsg || "Unknown Auto-Pilot Error"));
   } finally {
     setState("IDLE");
     emit("done", { results, totalTokens });

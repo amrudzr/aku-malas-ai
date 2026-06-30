@@ -268,8 +268,8 @@ function blobToDataUrl(blob) {
 async function extractPage(profile) {
   const tab = await getActiveTab();
 
-  const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+  const scriptResults = await chrome.scripting.executeScript({
+    target: { tabId: tab.id, allFrames: true },
     args: [profile],
     func: (profile) => {
       // --- Inline extraction logic (runs in page context) ---
@@ -453,7 +453,24 @@ async function extractPage(profile) {
     },
   });
 
-  return result;
+  // Find the best frame that actually contains options or a question
+  let bestResult = scriptResults[0]?.result || {};
+  let maxScore = -1;
+  
+  for (const { result } of scriptResults) {
+    if (!result) continue;
+    let score = 0;
+    if (result.question) score += 10;
+    if (result.options?.length > 0) score += result.options.length;
+    if (result.actions?.length > 0) score += result.actions.length;
+    
+    if (score > maxScore) {
+      maxScore = score;
+      bestResult = result;
+    }
+  }
+
+  return bestResult;
 }
 
 /**
@@ -465,8 +482,8 @@ async function executeAction(tabId, actions) {
     tabId = tab.id;
   }
 
-  await chrome.scripting.executeScript({
-    target: { tabId },
+  const scriptResults = await chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
     args: [actions],
     func: async (actionsArray) => {
       const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -546,8 +563,8 @@ function waitForPageChange(tabId, originalTitle, originalUrl, timeoutMs = 15000)
 async function compressDOMPage() {
   const tab = await getActiveTab();
 
-  const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+  const scriptResults = await chrome.scripting.executeScript({
+    target: { tabId: tab.id, allFrames: true },
     func: () => {
       function compress(node = document.body) {
         if (!node) return "";
@@ -583,5 +600,11 @@ async function compressDOMPage() {
     }
   });
 
-  return result;
+  // Combine DOM strings from all frames to ensure we don't miss anything
+  let combinedDom = "";
+  for (const { result } of scriptResults) {
+    if (result) combinedDom += result + "\n";
+  }
+
+  return combinedDom.substring(0, 15000); // Prevent massive payloads
 }

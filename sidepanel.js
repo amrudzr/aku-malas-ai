@@ -468,8 +468,8 @@ function setBusy(busy, specificBtn) {
 function notifyError(msg) {
   // Lightweight, non-blocking error surface.
   console.error("[Aku Malas AI]", msg);
-  // Fall back to alert for hard failures like a missing key.
-  // (kept minimal so it doesn't spam during normal use)
+  // Also show an alert so it's not missed if the chat scrolls too fast
+  alert("⚠️ Auto-Pilot Error: " + msg);
 }
 
 // ---------------------------------------------------------------------------
